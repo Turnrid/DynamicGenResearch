@@ -78,6 +78,7 @@
 #include <fstream>
 #include <sstream>
 #include <map>
+#include <string>
 #include <set>
 #include <ctrace/Event.h>
 
@@ -128,36 +129,82 @@ SanitizerCoverageOptions OverrideFromCL(SanitizerCoverageOptions Options) {
 class FuncIDMngt {
 
 public:
-  FuncIDMngt (std::string File = "functions_list"): FIDFile(File)  {
-
+  FuncIDMngt (std::string File = "/home/security/DynamicGenResearch/function_list.txt"): FIDFile(File)  {
+    std::ofstream outfile(FIDFile, std::ios::app);
+    if (!outfile.is_open()) {
+      std::cerr << "Failed to open or create file: " << FIDFile << std::endl;
+    } else {
+      std::cout << "File opened/creaeted successfully: " << FIDFile << std::endl;
+      outfile.close();
+    }
+    LoadFunctions();
   }
 
   ~FuncIDMngt () {
+    std::cout << "Destructor called, dumping function to file." << std::endl;
+    DumpFunctions();
   }
 
 // defintions of private functions
 private:
+  Module* CurMd;
+  std::string FIDFile;
+  std::map<std::string, unsigned> FName2ID;
 
 // defintions of public functions
 public:
   inline unsigned GetFuncID (Module *M, Function *F) {
-    return 0;
+    std::string funcName = M->getName().str() + "_" + F->getName().str();
+
+    if (FName2ID.find(funcName) == FName2ID.end()) {
+      FName2ID[funcName] = FName2ID.size() + 1;
+      std::cout << "Added function " << funcName << " with ID " << FName2ID[funcName] << std::endl;
+    }
+
+    return FName2ID[funcName];
   }
 
   inline void LoadFunctions ()
   {
+    std::ifstream infile(FIDFile);
+    if (!infile.is_open()) {
+      std::cerr << "Failed to open file: " << FIDFile << std::endl;
+      return;
+    }
 
+    std::string line;
+    while (std::getline(infile, line)) {
+      std::istringstream iss(line);
+      std::string functionName;
+      unsigned functionID;
+
+      if (std::getline(iss, functionName, ':') && iss >> functionID) {
+        FName2ID[functionName] = functionID;
+      }
+    }
+
+    infile.close();
   }
 
   inline void DumpFunctions ()
   {
-    
+    std::ofstream outfile(FIDFile, std::ios::app);
+    if (!outfile.is_open()) {
+      std::cerr << "Failed to open file: " << FIDFile << std::endl;
+      return;
+    }
+
+    std::cout << "Dumping Function List to " << FIDFile << std::endl;
+    for (const auto& entry : FName2ID) {
+      outfile << entry.first << ":" << entry.second << "\n";
+    }
+
+    outfile.close();
+    std::cout << "Function List Saved Successfully." << std::endl;
   }
 
 private:
-  Module *CurMd;
-  std::string FIDFile;
-  std::map<std::string, unsigned> FName2ID;
+
 };
 
 class ModuleFCov {
@@ -186,7 +233,12 @@ public:
 
     inline void InjectOne (IRBuilder<> &IRB, unsigned FuncKey, unsigned FuncID) 
     {
-        return;
+        Value* NullPtr = ConstantPointerNull::get(cast<PointerType>(Int32PtrTy));
+        Value *KeyVal = IRB.getInt32(FuncKey);
+        Value *IDVal = IRB.getInt32(FuncID);
+
+        CallInst* CI = IRB.CreateCall(ScanCovFunctionID, {NullPtr, KeyVal, IDVal});;
+        CI->setCannotMerge();
     }
 
     inline void RunInject (unsigned FuncID) 
@@ -195,9 +247,10 @@ public:
             return;
         }
 
-        
+        BasicBlock &entryBlock = CurFunc->getEntryBlock();
+        IRBuilder<> IRB(&*entryBlock.getFirstInsertionPt());
 
-        return;
+        InjectOne(IRB, 0, FuncID);
     }
 
 private:
