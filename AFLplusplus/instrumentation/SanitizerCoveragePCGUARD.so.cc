@@ -42,6 +42,7 @@
   #include "llvm/IR/InlineAsm.h"
 #endif
 #include "llvm/IR/IntrinsicInst.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Intrinsics.h"
 #include "llvm/IR/LLVMContext.h"
 #if LLVM_VERSION_MAJOR < 15
@@ -127,136 +128,212 @@ SanitizerCoverageOptions OverrideFromCL(SanitizerCoverageOptions Options) {
 }
 
 class FuncIDMngt {
-
 public:
-  FuncIDMngt (std::string File = "/home/security/DynamicGenResearch/function_list.txt"): FIDFile(File)  {
-    std::ofstream outfile(FIDFile, std::ios::app);
-    if (!outfile.is_open()) {
-      std::cerr << "Failed to open or create file: " << FIDFile << std::endl;
+FuncIDMngt(std::string FuncFile = "/home/security/DynamicGenResearch/function_list.txt",
+           std::string GraphFile = "/home/security/DynamicGenResearch/function_call_graph.txt")
+    : FIDFile(FuncFile), GraphFile(GraphFile) {
+    // Initialize files
+    std::ofstream funcfile(FIDFile, std::ios::app);
+    std::ofstream graphfile(GraphFile, std::ios::app);
+
+    if (!funcfile.is_open()) {
+        std::cerr << "Failed to open or create function list file: " << FIDFile << std::endl;
     } else {
-      std::cout << "File opened/creaeted successfully: " << FIDFile << std::endl;
-      outfile.close();
+        std::cout << "Function list file opened/created successfully: " << FIDFile << std::endl;
+        funcfile.close();
     }
+
+    if (!graphfile.is_open()) {
+        std::cerr << "Failed to open or create call graph file: " << GraphFile << std::endl;
+    } else {
+        std::cout << "Call graph file opened/created successfully: " << GraphFile << std::endl;
+        graphfile.close();
+    }
+
     LoadFunctions();
-  }
+    LoadCallGraph();
+}
 
-  ~FuncIDMngt () {
-    std::cout << "Destructor called, dumping function to file." << std::endl;
-    DumpFunctions();
-  }
 
-// defintions of private functions
-private:
-  Module* CurMd;
-  std::string FIDFile;
-  std::map<std::string, unsigned> FName2ID;
+    inline unsigned GetFuncID(Module *M, Function *F) {
+        std::string funcName = M->getName().str() + "_" + F->getName().str();
 
-// defintions of public functions
-public:
-  inline unsigned GetFuncID (Module *M, Function *F) {
-    std::string funcName = M->getName().str() + "_" + F->getName().str();
+        if (FName2ID.find(funcName) == FName2ID.end()) {
+            FName2ID[funcName] = FName2ID.size() + 1;
+            std::cout << "Added function " << funcName << " with ID " << FName2ID[funcName] << std::endl;
+        }
 
-    if (FName2ID.find(funcName) == FName2ID.end()) {
-      FName2ID[funcName] = FName2ID.size() + 1;
-      std::cout << "Added function " << funcName << " with ID " << FName2ID[funcName] << std::endl;
+        return FName2ID[funcName];
     }
 
-    return FName2ID[funcName];
-  }
+    void LogRelationship(const std::string &Caller, const std::string &Callee) {
+        std::cout << "Logging relationship: " << Caller << " -> " << Callee << std::endl;
+        CallGraph[Caller].insert(Callee); // Log caller-callee relationship
+    }
 
-  inline void LoadFunctions ()
-  {
-    std::ifstream infile(FIDFile);
+
+        void LoadFunctions() {
+        std::ifstream infile(FIDFile);
+        if (!infile.is_open()) {
+            std::cerr << "Failed to open file: " << FIDFile << std::endl;
+            return;
+        }
+
+        std::string line;
+        while (std::getline(infile, line)) {
+            std::istringstream iss(line);
+            std::string functionName;
+            unsigned functionID;
+
+            if (std::getline(iss, functionName, ':') && iss >> functionID) {
+                FName2ID[functionName] = functionID;
+            }
+        }
+
+        infile.close();
+    }
+
+        void DumpFunctions() {
+        std::ofstream outfile(FIDFile, std::ios::trunc);
+        if (!outfile.is_open()) {
+            std::cerr << "Failed to open file: " << FIDFile << std::endl;
+            return;
+        }
+
+        std::cout << "Dumping Function List to " << FIDFile << std::endl;
+        for (const auto &entry : FName2ID) {
+            outfile << entry.first << ":" << entry.second << "\n";
+        }
+
+        outfile.close();
+        std::cout << "Function List Saved Successfully." << std::endl;
+    }
+
+inline void LoadCallGraph() {
+    std::ifstream infile(GraphFile);
     if (!infile.is_open()) {
-      std::cerr << "Failed to open file: " << FIDFile << std::endl;
-      return;
+        std::cerr << "Failed to open call graph file: " << GraphFile << std::endl;
+        return;
     }
 
     std::string line;
     while (std::getline(infile, line)) {
-      std::istringstream iss(line);
-      std::string functionName;
-      unsigned functionID;
+        size_t pos = line.find(':');
+        if (pos == std::string::npos) continue; // Skip malformed lines
 
-      if (std::getline(iss, functionName, ':') && iss >> functionID) {
-        FName2ID[functionName] = functionID;
-      }
+        std::string caller = line.substr(0, pos);
+        std::string callees = line.substr(pos + 1);
+
+        std::istringstream iss(callees);
+        std::string callee;
+        while (std::getline(iss, callee, ',')) {
+            CallGraph[caller].insert(callee);
+        }
     }
 
     infile.close();
-  }
+}
 
-  inline void DumpFunctions ()
-  {
-    std::ofstream outfile(FIDFile, std::ios::app);
+inline void DumpCallGraph() {
+    std::ofstream outfile(GraphFile, std::ios::trunc);
     if (!outfile.is_open()) {
-      std::cerr << "Failed to open file: " << FIDFile << std::endl;
-      return;
+        std::cerr << "Failed to open call graph file: " << GraphFile << std::endl;
+        return;
     }
 
-    std::cout << "Dumping Function List to " << FIDFile << std::endl;
-    for (const auto& entry : FName2ID) {
-      outfile << entry.first << ":" << entry.second << "\n";
+    std::cout << "Dumping Call Graph to: " << GraphFile << std::endl;
+    for (const auto &entry : CallGraph) {
+        outfile << entry.first << ":";
+        bool first = true;
+        for (const auto &callee : entry.second) {
+            if (!first) outfile << ",";
+            outfile << callee;
+            first = false;
+        }
+        outfile << "\n";
     }
 
     outfile.close();
-    std::cout << "Function List Saved Successfully." << std::endl;
-  }
+    std::cout << "Call Graph Saved Successfully." << std::endl;
+}
+
+
+
+
+
 
 private:
-
+    Module *CurMd;
+    std::string FIDFile;
+    std::string GraphFile;
+    std::map<std::string, unsigned> FName2ID;                  // Function name to ID mapping
+    std::map<std::string, std::set<std::string>> CallGraph;    // Call graph data
 };
 
 class ModuleFCov {
-
 public:
-    ModuleFCov (Module &M, Function *F) {
+    ModuleFCov(Module &M, Function *F, FuncIDMngt &FuncManager) : FuncManager(FuncManager) {
         CurFunc = F;
 
         CurM = &M;
         C = &(CurM->getContext());
         DL = &CurM->getDataLayout();
-        
-        Type *      VoidTy = Type::getVoidTy(*C);
+
+        Type *VoidTy = Type::getVoidTy(*C);
         IRBuilder<> IRB(*C);
         Int32PtrTy = PointerType::getUnqual(IRB.getInt32Ty());
         Int32Ty = IRB.getInt32Ty();
 
-        ScanCovFunctionID = CurM->getOrInsertFunction("__analysis_trace_function_id",   VoidTy, Int32PtrTy, Int32Ty, Int32Ty);
+        ScanCovFunctionID = CurM->getOrInsertFunction("__analysis_trace_function_id", VoidTy, Int32PtrTy, Int32Ty, Int32Ty);
         TargetInitFunction = CurM->getOrInsertFunction("__analysis_trace_init", VoidTy);
         TargetExitFunction = CurM->getOrInsertFunction("__analysis_trace_exit", VoidTy);
+
+        LogFunctionCalls();
     }
 
-    ~ModuleFCov () {
+    ~ModuleFCov() {}
 
-    }
-
-    inline void InjectOne (IRBuilder<> &IRB, unsigned FuncKey, unsigned FuncID) 
-    {
-        Value* NullPtr = ConstantPointerNull::get(cast<PointerType>(Int32PtrTy));
+    inline void InjectOne(IRBuilder<> &IRB, unsigned FuncKey, unsigned FuncID) {
+        Value *NullPtr = ConstantPointerNull::get(cast<PointerType>(Int32PtrTy));
         Value *KeyVal = IRB.getInt32(FuncKey);
         Value *IDVal = IRB.getInt32(FuncID);
 
-        CallInst* CI = IRB.CreateCall(ScanCovFunctionID, {NullPtr, KeyVal, IDVal});;
+        CallInst *CI = IRB.CreateCall(ScanCovFunctionID, {NullPtr, KeyVal, IDVal});
         CI->setCannotMerge();
     }
 
-    inline void RunInject (unsigned FuncID) 
-    {
-        if (CurFunc->empty() || FuncID == 0) {
-            return;
-        }
-
-        BasicBlock &entryBlock = CurFunc->getEntryBlock();
-        IRBuilder<> IRB(&*entryBlock.getFirstInsertionPt());
-
-        InjectOne(IRB, 0, FuncID);
+inline void RunInject(unsigned FuncID) {
+    if (CurFunc->empty() || FuncID == 0) {
+        return;
     }
+
+    // Inject instrumentation at the entry block
+    BasicBlock &entryBlock = CurFunc->getEntryBlock();
+    IRBuilder<> IRB(&*entryBlock.getFirstInsertionPt());
+    InjectOne(IRB, 0, FuncID);
+
+    // Log all call relationships
+    std::string Caller = CurFunc->getName().str();
+    for (auto &I : instructions(*CurFunc)) {
+      std::cout << "Processing caller: " << Caller << std::endl;
+        if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+          std::cout << "Found call instruction." << std::endl;
+            if (Function *Callee = CI->getCalledFunction()) {
+              std::cout << "Found callee." << std::endl;
+                std::string CalleeName = Callee->getName().str();
+                FuncManager.LogRelationship(Caller, CalleeName);
+            } else {
+              std::cout << "Found call instruction with no callee." << std::endl;
+                FuncManager.LogRelationship(Caller, "indirect_or_external");
+            }
+        }
+    }
+}
+
 
 private:
     Function *CurFunc;
-
-    LLVMContext* C;
+    LLVMContext *C;
     const DataLayout *DL;
     Module *CurM;
     Type *Int32Ty, *Int32PtrTy;
@@ -264,7 +341,25 @@ private:
     FunctionCallee ScanCovFunctionID;
     FunctionCallee TargetExitFunction;
     FunctionCallee TargetInitFunction;
-    
+    FuncIDMngt &FuncManager;
+
+    void LogFunctionCalls() {
+        std::string Caller = CurFunc->getName().str();
+        std::cout << "Processing caller: " << Caller << std::endl;
+
+        for (auto &I : instructions(*CurFunc)) {
+            if (CallInst *CI = dyn_cast<CallInst>(&I)) {
+                if (Function *Callee = CI->getCalledFunction()) {
+                    std::string CalleeName = Callee->getName().str();
+                    std::cout << "  Found callee: " << CalleeName << std::endl;
+                    FuncManager.LogRelationship(Caller, CalleeName);
+                } else {
+                    std::cout << "  Found call instruction with no callee." << std::endl;
+                }
+            }
+        }
+    }
+
 };
 
 using DomTreeCallback = function_ref<const DominatorTree *(Function &F)>;
@@ -755,7 +850,7 @@ void ModuleSanitizerCoverageAFL::instrumentFunction(
   SmallVector<Instruction *, 8> SwitchTraceTargets;
 
   unsigned FuncID = FIdMgt.GetFuncID(&M, &F);
-  ModuleFCov MfCov (M, &F); 
+  ModuleFCov MfCov (M, &F, FIdMgt); 
   MfCov.RunInject (FuncID);
 
   const DominatorTree     *DT = DTCallback(F);
