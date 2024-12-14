@@ -44,13 +44,12 @@ def load_and_group_functions(filename="uncovered_functions.txt"):
 
 
 # Analyze the groups with OpenAI API
-def analyze_groups(function_clusters, call_graph_groups):
+def analyze_groups(function_clusters):
     """
-    Analyze function groups using LLM, incorporating clustering and call graph information.
+    Analyze function groups using LLM.
 
     Args:
         function_clusters: Dictionary of clusters, where keys are cluster IDs, and values are lists of functions.
-        call_graph_groups: List of sets, where each set contains uncovered and connected function names.
 
     Returns:
         Dictionary mapping group IDs to LLM analyses.
@@ -58,23 +57,15 @@ def analyze_groups(function_clusters, call_graph_groups):
     analyses = {}
 
     for cluster_id, functions in function_clusters.items():
-        # Find which call graph group this cluster intersects with
-        related_call_graph_groups = [
-            group for group in call_graph_groups if set(functions).intersection(group)
-        ]
-        
-        # Construct a prompt with both clustering and call graph details
+        # Construct a prompt with function cluster details
         prompt = (
-            f"Analyze the following cluster of functions and describe their possible purpose or functionality. "
-            "Additionally, consider their connections in the program's call graph:\n\n"
+            f"Analyze the following cluster of functions and describe their possible purpose or functionality:\n\n"
             f"Cluster ID: {cluster_id}\n"
-            f"Functions in Cluster:\n" + "\n".join(f"- {func}" for func in functions) + "\n\n"
-            f"Call Graph Connections:\n"
-            + "\n".join(f"- Connected to: {', '.join(group)}" for group in related_call_graph_groups)
+            f"Functions in Cluster:\n" + "\n".join(f"- {func}" for func in functions)
         )
         
         try:
-            # Send the combined data to the LLM
+            # Send the cluster data to the LLM
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
                 messages=[
@@ -88,7 +79,6 @@ def analyze_groups(function_clusters, call_graph_groups):
             analyses[cluster_id] = "Analysis failed."
     
     return analyses
-
 
 # Save the analysis results to a file
 def save_analysis(analyses, filename="function_analysis.txt"):

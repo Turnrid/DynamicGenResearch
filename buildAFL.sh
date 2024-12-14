@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set up paths
-REPO_PATH="/home/security/DynamicGenResearch"
+REPO_PATH="/home/turnrid/School/SoftwareSecurity/DynamicGenResearch"
 AFL_PATH="$REPO_PATH/AFLplusplus"
 COMMON_PATH="$REPO_PATH/Common"
 

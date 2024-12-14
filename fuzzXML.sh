@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set up paths
-REPO_PATH="/home/security/DynamicGenResearch"
+REPO_PATH="/home/turnrid/School/SoftwareSecurity/DynamicGenResearch"
 LIBXML_PATH="$REPO_PATH/benchmarks/libxml2"
 FUZZ_INPUT_DIR="$LIBXML_PATH/fuzz/in"
 FUZZ_OUTPUT_DIR="$LIBXML_PATH/fuzz/out"

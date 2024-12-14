@@ -74,7 +74,7 @@ std::string getHeartbeat(int step) {
 }
 
 int main() {
-    auto functionMap = loadFunctionList("/home/security/DynamicGenResearch/function_list.txt");
+    auto functionMap = loadFunctionList("/home/turnrid/School/SoftwareSecurity/DynamicGenResearch/function_list.txt");
     if (functionMap.empty()) {
         std::cerr << "No functions loaded. Exiting..." << std::endl;
         return 1;

@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Set up paths
-REPO_PATH="/home/security/DynamicGenResearch"
+REPO_PATH="/home/turnrid/School/SoftwareSecurity/DynamicGenResearch"
 LIBXML_PATH="$REPO_PATH/benchmarks/libxml2"
 LIBXML_VERSION="libxml2-2.13.0"
 AFL_COMPILER="afl-cc -fPIC -lshmQueue"
